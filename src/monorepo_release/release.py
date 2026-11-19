@@ -79,7 +79,8 @@ def published_versions(check_url: str, package: str) -> set[str]:
 
 def publish(component_dir: Path, check_url: str, *, dry_run: bool) -> None:
     """Publish the built distributions of a component, skipping uploaded files."""
-    distributions = sorted((component_dir / "dist").glob("*"))
+    dist_dir = component_dir / "dist"
+    distributions = sorted([*dist_dir.glob("*.whl"), *dist_dir.glob("*.tar.gz")])
     if not distributions:
         msg = f"No distributions found in {component_dir / 'dist'}"
         raise SystemExit(msg)
