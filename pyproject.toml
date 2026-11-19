@@ -1,0 +1,76 @@
+[project]
+name = "python-monorepo-release-action"
+version = "1.1.0.post0"
+description = "GitHub action for releasing python monorepo packages"
+requires-python = ">=3.12"
+dependencies = [
+  "packaging>=24.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.12,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "monorepo_release"
+
+[tool.uv]
+default-groups = ["dev", "lint"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4",
+  "pytest-mock>=3.14",
+]
+lint = [
+  "prek>=0.5.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+lint.ignore = [
+  "FIX",   # flake8-fixme
+  "TD002", # Missing author in TODO
+  "TD003", # Missing TODO link
+  "CPY",   # flake8-copyright (CPY)
+  "D104",  # Missing docstring in public package
+  "D105",  # Missing docstring in magic method
+  "D107",  # Missing docstring in `__init__`
+  "D417",  # Missing argument description
+  # Conflicting rules (formatter)
+  "D203",   # one-blank-line-before-class, D211 used (no-blank-line-before-class)
+  "D213",   # multi-line-summary-second-line, D212 used (multi-line-summary-first-line)
+  "COM812", # missing-trailing-comma (formatter will enforce this)
+  "ISC001", # single-line-implicit-string-concatenation,
+  "EXE002", # The file is executable but no shebang is present
+  "D100",   # docstring in public module
+  "EM102",  # f-string-in-exception
+]
+
+# List of all rules https://docs.astral.sh/ruff/rules/
+lint.select = [
+  "ALL",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"test/*" = [
+  "INP001",
+  "D",       # pydocstyle
+  "DTZ",     # flake8-datetimez
+  "FBT",     # flake8-boolean-trap
+  "TD",      # flake8-todos
+  "S",       # flake8-bandit
+  "SLF",     # flake8-self
+  "ANN401",  # Dynamically typed expressions (typing.Any) are disallowed
+  "ANN201",  # Missing return type annotation for public function
+  "E501",    # Line too long
+  "PLR2004", # Magic value used in comparison, consider replacing `2000` with a constant variable
+  "PLR0913", # Too many arguments in function definition
+  "ARG001",  # Unused function argument
+  "AIR002",  # @dag should have an explicit `schedule` argument
+]
