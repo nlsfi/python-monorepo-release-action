@@ -1,6 +1,6 @@
 [project]
 name = "python-monorepo-release-action"
-version = "0.0.0.post0"
+version = "1.0.0"
 description = "GitHub action for releasing python monorepo packages"
 requires-python = ">=3.12"
 dependencies = [
