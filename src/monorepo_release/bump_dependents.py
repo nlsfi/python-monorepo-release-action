@@ -12,6 +12,9 @@ import sys
 import tomllib
 from pathlib import Path
 
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import Version
+
 KEY_PATTERN = re.compile(r"^([A-Za-z0-9_-]+)\s*=")
 STRING_PATTERN = re.compile(r'"((?:\\.|[^"\\])*)"')
 REQUIREMENT_NAME_PATTERN = re.compile(r"^([A-Za-z0-9_.-]+)(\[[^\]]*\])?(.*)$")
@@ -33,8 +36,24 @@ def version_range(version: str) -> str:
     return f">={version},<{upper}"
 
 
-def update_requirement(value: str, dependency: str, version: str) -> str:
-    """Update a matching requirement while preserving extras and environment markers."""
+def lower_bound(specifier: str) -> Version | None:
+    """Return the highest lower bound of a specifier, if it has one."""
+    try:
+        specs = SpecifierSet(specifier.strip())
+    except InvalidSpecifier:
+        return None
+    bounds = [Version(s.version) for s in specs if s.operator in {">=", "~=", "=="}]
+    return max(bounds, default=None)
+
+
+def update_requirement(
+    value: str, dependency: str, version: str, *, only_raise: bool = False
+) -> str:
+    """Update a matching requirement while preserving extras and environment markers.
+
+    With only_raise, requirements whose lower bound is already at or above the
+    version, or that have no lower bound, are left unchanged.
+    """
     marker_index = value.find(";")
     requirement, marker = (
         (value[:marker_index].rstrip(), value[marker_index:])
@@ -48,10 +67,16 @@ def update_requirement(value: str, dependency: str, version: str) -> str:
     name, extras, specifier = match.groups()
     if specifier and not re.match(r"\s*[<>=!~]", specifier):
         return value
+    if only_raise and (
+        (bound := lower_bound(specifier)) is None or bound >= Version(version)
+    ):
+        return value
     return f"{name}{extras or ''}{version_range(version)}{marker}"
 
 
-def bump_requirements(text: str, dependency: str, version: str) -> str:
+def bump_requirements(
+    text: str, dependency: str, version: str, *, only_raise: bool = False
+) -> str:
     """Update dependency requirements in project dependencies and optional groups."""
     table = key = ""
     updated_lines = []
@@ -70,7 +95,9 @@ def bump_requirements(text: str, dependency: str, version: str) -> str:
 
         def replace(match: re.Match[str]) -> str:
             value = tomllib.loads(f'value = "{match.group(1)}"')["value"]
-            updated = update_requirement(value, dependency, version)
+            updated = update_requirement(
+                value, dependency, version, only_raise=only_raise
+            )
             return json.dumps(updated, ensure_ascii=False)
 
         updated_lines.append(STRING_PATTERN.sub(replace, line))
@@ -83,7 +110,9 @@ def component_package_name(component_dir: Path) -> str:
         return normalize(tomllib.load(file)["project"]["name"])
 
 
-def bump_dependents(components_dir: Path, component: str, version: str) -> list[str]:
+def bump_dependents(
+    components_dir: Path, component: str, version: str, *, only_raise: bool = False
+) -> list[str]:
     """Update dependent components and return their names relative to components_dir."""
     components_dir = components_dir.resolve()
     component_dir = (components_dir / component).resolve()
@@ -98,7 +127,7 @@ def bump_dependents(components_dir: Path, component: str, version: str) -> list[
         if path.parent.resolve() == component_dir:
             continue
         text = path.read_text()
-        updated = bump_requirements(text, dependency, version)
+        updated = bump_requirements(text, dependency, version, only_raise=only_raise)
         if updated != text:
             path.write_text(updated)
             dependents.append(path.parent.relative_to(components_dir).as_posix())

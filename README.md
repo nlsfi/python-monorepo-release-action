@@ -102,7 +102,9 @@ it again. For each component the action also:
 - publishes the latest release tag if its version is missing from `check_url`.
   The distributions are built from the tag with `uv build --out-dir dist`;
 - raises the requirements of the dependents to the latest released version if
-  they are behind.
+  their lower bound is below it. Without a new release, requirements that
+  already have a lower bound at or above the latest release, or none at all,
+  are never changed.
 
 Already uploaded files are skipped with `uv publish --check-url`. A component
 without releases is skipped, and a rerun with nothing to do changes nothing.

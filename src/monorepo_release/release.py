@@ -117,10 +117,17 @@ def publish_missing_release(
 
 
 def raise_dependent_requirements(
-    components_dir: Path, component: str, version: str, *, dry_run: bool
+    components_dir: Path,
+    component: str,
+    version: str,
+    *,
+    only_raise: bool,
+    dry_run: bool,
 ) -> None:
     """Raise the requirements of dependents, then lock and commit the changes."""
-    dependents = bump_dependents(components_dir, component, version)
+    dependents = bump_dependents(
+        components_dir, component, version, only_raise=only_raise
+    )
     if not dependents:
         logger.info("No dependent requirements to update.")
         return
@@ -183,7 +190,9 @@ def release_component(
                 components_dir, component, tag, check_url, dry_run=dry_run
             )
 
-    raise_dependent_requirements(components_dir, component, version, dry_run=dry_run)
+    raise_dependent_requirements(
+        components_dir, component, version, only_raise=not released, dry_run=dry_run
+    )
     if dry_run:
         run(["git", "reset", "--hard", "HEAD"])
     return version if released else None

@@ -605,6 +605,7 @@ version = "0.0.0.post0"
 source = { editable = "." }
 default-groups = ["dev", "lint"]
 dependencies = [
+    { name = "packaging" },
     { name = "python-semantic-release" },
 ]
 
@@ -618,7 +619,10 @@ lint = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "python-semantic-release", specifier = ">=10.7,<11" }]
+requires-dist = [
+    { name = "packaging", specifier = ">=24.0" },
+    { name = "python-semantic-release", specifier = ">=10.7,<11" },
+]
 
 [package.metadata.requires-dev]
 dev = [

@@ -9,7 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from monorepo_release.bump_dependents import bump_requirements, version_range
+from monorepo_release.bump_dependents import (
+    bump_requirements,
+    update_requirement,
+    version_range,
+)
 
 
 @pytest.mark.parametrize(
@@ -92,3 +96,21 @@ def test_bump_dependents_updates_matching_component_and_prints_its_name(
         'dependencies = ["sample_lib>=0.2.0,<0.3"]'
         in (consumer_dir / "pyproject.toml").read_text()
     )
+
+
+@pytest.mark.parametrize(
+    ("requirement", "expected"),
+    [
+        ("lib>=0.1", "lib>=0.2.0,<0.3"),
+        ("lib>=0.1,<1", "lib>=0.2.0,<0.3"),
+        ("lib>=0.2.0,<0.3", "lib>=0.2.0,<0.3"),
+        ("lib>=0.2.1", "lib>=0.2.1"),
+        ("lib<1", "lib<1"),
+        ("lib", "lib"),
+        ("other>=0.1", "other>=0.1"),
+    ],
+)
+def test_update_requirement_only_raise_never_lowers_or_rewrites_unbounded(
+    requirement: str, expected: str
+) -> None:
+    assert update_requirement(requirement, "lib", "0.2.0", only_raise=True) == expected

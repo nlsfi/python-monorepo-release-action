@@ -4,6 +4,7 @@ version = "0.0.0.post0"
 description = "GitHub action for releasing python monorepo packages"
 requires-python = ">=3.12"
 dependencies = [
+  "packaging>=24.0",
   "python-semantic-release>=10.7,<11",
 ]
 
