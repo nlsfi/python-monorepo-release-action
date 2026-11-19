@@ -1,14 +1,14 @@
 [project]
 name = "python-monorepo-release-action"
-version = "1.1.0.post0"
+version = "0.0.0.post0"
 description = "GitHub action for releasing python monorepo packages"
 requires-python = ">=3.12"
 dependencies = [
-  "packaging>=24.0",
+  "python-semantic-release>=10.7,<11",
 ]
 
 [build-system]
-requires = ["uv_build>=0.10.12,<0.11.0"]
+requires = ["uv_build>=0.13.6,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

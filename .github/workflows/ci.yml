@@ -1,0 +1,46 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  prek:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --frozen
+      - uses: j178/prek-action@7b101f8338a08d2bd6fdb3625e4e7692428763a3 # v3.1.1
+        with:
+          extra-args: --all-files
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --frozen
+      - run: uv run pytest
+
+  action-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: action
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Create fixture workspace with releasable changes
+        run: uv run --project action python action/test/fixture_workspace.py . "$RUNNER_TEMP/origin.git"
+      - id: release
+        uses: ./action
+        with:
+          github_token: ${{ github.token }}
+          dry_run: "true"
+      - name: Verify outputs
+        env:
+          RELEASED: ${{ steps.release.outputs.released }}
+          RELEASES: ${{ steps.release.outputs.releases }}
+        run: |
+          test "$RELEASED" = "true"
+          test "$RELEASES" = '{"lib": "0.2.0"}'

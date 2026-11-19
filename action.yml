@@ -1,0 +1,54 @@
+name: Release Python monorepo components
+description: Release and publish uv-workspace components in dependency order and bump their dependents.
+
+inputs:
+  components:
+    description: >-
+      Component directory names under components_dir, one per line, released in the given order.
+      Use "auto" to release all components ordered by their dependencies
+    required: false
+    default: auto
+  components_dir:
+    description: Directory containing the component directories.
+    required: false
+    default: components
+  github_token:
+    description: Token used to push release commits and tags.
+    required: true
+  dry_run:
+    description: Build and validate the release without committing, tagging, pushing, or publishing.
+    required: false
+    default: "false"
+
+outputs:
+  released:
+    description: '"true" if any release was made or would be made.'
+    value: ${{ steps.release.outputs.released }}
+  releases:
+    description: JSON object mapping released component names to their versions.
+    value: ${{ steps.release.outputs.releases }}
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+    - name: Install monorepo release scripts
+      shell: bash
+      run: uv sync --project "$GITHUB_ACTION_PATH" --frozen --no-default-groups
+
+    - name: Release components
+      id: release
+      shell: bash
+      env:
+        PYTHON: ${{ github.action_path }}/.venv/bin/python
+        GH_TOKEN: ${{ inputs.github_token }}
+        COMPONENTS: ${{ inputs.components }}
+        COMPONENTS_DIR: ${{ inputs.components_dir }}
+        DRY_RUN: ${{ inputs.dry_run }}
+      run: |
+        args=(--components-dir "$COMPONENTS_DIR")
+        if [ "$DRY_RUN" = "true" ]; then
+          args+=(--dry-run)
+        fi
+        "$PYTHON" -m monorepo_release.release "$COMPONENTS" "${args[@]}"
