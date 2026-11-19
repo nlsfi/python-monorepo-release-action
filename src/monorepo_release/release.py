@@ -12,12 +12,17 @@ import os
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
-from monorepo_release.bump_dependents import bump_dependents
+from monorepo_release.bump_dependents import bump_dependents, component_package_name
 from monorepo_release.workspace import release_order
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_CHECK_URL = "https://pypi.org/simple/"
+HTTP_NOT_FOUND = 404
 
 
 def run(
@@ -42,14 +47,73 @@ def semantic_release(component_dir: Path, *, dry_run: bool) -> dict[str, str]:
     return dict(line.split("=", 1) for line in lines if "=" in line)
 
 
-def publish(component_dir: Path, *, dry_run: bool) -> None:
-    """Publish the built distributions of a component."""
+def last_released(component_dir: Path) -> tuple[str, str] | None:
+    """Return the last released version and its tag, if any."""
+    results = []
+    for option in ("--print-last-released", "--print-last-released-tag"):
+        command = [sys.executable, "-m", "semantic_release", "version", option]
+        result = subprocess.run(  # noqa: S603
+            command, cwd=component_dir, check=False, capture_output=True, text=True
+        )
+        value = result.stdout.strip()
+        if result.returncode != 0 or not value:
+            return None
+        results.append(value.splitlines()[-1])
+    return results[0], results[1]
+
+
+def published_versions(check_url: str, package: str) -> set[str]:
+    """Return the versions of a package published to a PEP 691 / 700 index."""
+    url = f"{check_url.rstrip('/')}/{package}/"
+    request = urllib.request.Request(  # noqa: S310
+        url, headers={"Accept": "application/vnd.pypi.simple.v1+json"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+            return set(json.load(response).get("versions", []))
+    except urllib.error.HTTPError as error:
+        if error.code == HTTP_NOT_FOUND:
+            return set()
+        raise
+
+
+def publish(component_dir: Path, check_url: str, *, dry_run: bool) -> None:
+    """Publish the built distributions of a component, skipping uploaded files."""
     distributions = sorted((component_dir / "dist").glob("*"))
     if not distributions:
         msg = f"No distributions found in {component_dir / 'dist'}"
         raise SystemExit(msg)
-    command = ["uv", "publish", *(["--dry-run"] if dry_run else [])]
+    command = ["uv", "publish", "--check-url", check_url]
+    if dry_run:
+        command.append("--dry-run")
     run([*command, *(str(path) for path in distributions)], cwd=component_dir)
+
+
+def publish_missing_release(
+    components_dir: Path, component: str, tag: str, check_url: str, *, dry_run: bool
+) -> None:
+    """Build and publish a tagged release that was never published.
+
+    Recovers from a run that pushed the release tag but failed before publishing.
+    """
+    root = Path(
+        subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],  # noqa: S607
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+    relative = (components_dir / component).relative_to(root)
+    with tempfile.TemporaryDirectory() as tmp:
+        worktree = Path(tmp) / "worktree"
+        run(["git", "worktree", "add", "--detach", str(worktree), tag])
+        try:
+            component_dir = worktree / relative
+            run(["uv", "build", "--out-dir", "dist"], cwd=component_dir)
+            publish(component_dir, check_url, dry_run=dry_run)
+        finally:
+            run(["git", "worktree", "remove", "--force", str(worktree)])
 
 
 def raise_dependent_requirements(
@@ -87,21 +151,42 @@ def raise_dependent_requirements(
 
 
 def release_component(
-    components_dir: Path, component: str, *, dry_run: bool
+    components_dir: Path,
+    component: str,
+    check_url: str = DEFAULT_CHECK_URL,
+    *,
+    dry_run: bool,
 ) -> str | None:
-    """Release one component and return the released version, if any."""
+    """Release one component and bring its publication and dependents up to date.
+
+    Every step is derived from the repository and index state instead of only from
+    this run's release, so a run that failed halfway is completed by running again.
+    Return the version released by this run, if any.
+    """
     component_dir = components_dir / component
     outputs = semantic_release(component_dir, dry_run=dry_run)
-    if outputs.get("released") != "true":
-        logger.info("No release for %s.", component)
-        return None
+    released = outputs.get("released") == "true"
 
-    version = outputs["version"]
-    publish(component_dir, dry_run=dry_run)
+    if released:
+        version = outputs["version"]
+        publish(component_dir, check_url, dry_run=dry_run)
+    else:
+        previous = last_released(component_dir)
+        if previous is None:
+            logger.info("No release for %s.", component)
+            return None
+        version, tag = previous
+        package = component_package_name(component_dir)
+        if version not in published_versions(check_url, package):
+            logger.info("Publishing unpublished release %s of %s.", tag, component)
+            publish_missing_release(
+                components_dir, component, tag, check_url, dry_run=dry_run
+            )
+
     raise_dependent_requirements(components_dir, component, version, dry_run=dry_run)
     if dry_run:
         run(["git", "reset", "--hard", "HEAD"])
-    return version
+    return version if released else None
 
 
 def main() -> None:
@@ -112,6 +197,7 @@ def main() -> None:
         help='Newline or comma separated component names, or "auto" for all.',
     )
     parser.add_argument("--components-dir", type=Path, default=Path("components"))
+    parser.add_argument("--check-url", default=DEFAULT_CHECK_URL)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -129,7 +215,7 @@ def main() -> None:
     releases = {}
     for component in components:
         version = release_component(
-            args.components_dir, component, dry_run=args.dry_run
+            args.components_dir, component, args.check_url, dry_run=args.dry_run
         )
         if version is not None:
             releases[component] = version

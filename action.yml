@@ -15,6 +15,12 @@ inputs:
   github_token:
     description: Token used to push release commits and tags.
     required: true
+  check_url:
+    description: >-
+      PEP 691 simple index URL used to detect releases that were not published yet
+      and to skip already uploaded files
+    required: false
+    default: https://pypi.org/simple/
   dry_run:
     description: Build and validate the release without committing, tagging, pushing, or publishing.
     required: false
@@ -45,9 +51,10 @@ runs:
         GH_TOKEN: ${{ inputs.github_token }}
         COMPONENTS: ${{ inputs.components }}
         COMPONENTS_DIR: ${{ inputs.components_dir }}
+        CHECK_URL: ${{ inputs.check_url }}
         DRY_RUN: ${{ inputs.dry_run }}
       run: |
-        args=(--components-dir "$COMPONENTS_DIR")
+        args=(--components-dir "$COMPONENTS_DIR" --check-url "$CHECK_URL")
         if [ "$DRY_RUN" = "true" ]; then
           args+=(--dry-run)
         fi

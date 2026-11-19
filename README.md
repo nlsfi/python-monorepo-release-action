@@ -78,12 +78,13 @@ To release only some components, or in a custom order, list them one per line:
 
 ### Inputs
 
-| Name             | Required | Default      | Description                                                                         |
-| ---------------- | -------- | ------------ | ----------------------------------------------------------------------------------- |
-| `components`     | no       | `auto`       | Component directory names, one per line, or `auto` to order all by dependencies     |
-| `components_dir` | no       | `components` | Directory containing the component directories                                      |
-| `github_token`   | yes      |              | Token used to push release commits and tags                                         |
-| `dry_run`        | no       | `false`      | Build and validate without committing, tagging, pushing, or publishing              |
+| Name             | Required | Default                    | Description                                                                     |
+| ---------------- | -------- | -------------------------- | ------------------------------------------------------------------------------- |
+| `components`     | no       | `auto`                     | Component directory names, one per line, or `auto` to order all by dependencies |
+| `components_dir` | no       | `components`               | Directory containing the component directories                                  |
+| `github_token`   | yes      |                            | Token used to push release commits and tags                                     |
+| `check_url`      | no       | `https://pypi.org/simple/` | PEP 691 index URL used to detect unpublished releases and skip uploaded files   |
+| `dry_run`        | no       | `false`                    | Build and validate without committing, tagging, pushing, or publishing          |
 
 ### Outputs
 
@@ -91,6 +92,21 @@ To release only some components, or in a custom order, list them one per line:
 | ---------- | ---------------------------------------------------------------- |
 | `released` | `"true"` if any component was or would be released               |
 | `releases` | JSON object mapping released component names to their versions   |
+
+## Rerunning
+
+Every step is derived from the repository and index state, not only from what
+the current run released, so a run that failed halfway is completed by running
+it again. For each component the action also:
+
+- publishes the latest release tag if its version is missing from `check_url`.
+  The distributions are built from the tag with `uv build --out-dir dist`;
+- raises the requirements of the dependents to the latest released version if
+  they are behind.
+
+Already uploaded files are skipped with `uv publish --check-url`. A component
+without releases is skipped, and a rerun with nothing to do changes nothing.
+The index must support the PEP 700 `versions` field, as PyPI does.
 
 ## Dry run
 
