@@ -5,6 +5,7 @@
 
 from pathlib import Path
 
+import pytest
 from pytest_mock import MockerFixture
 
 from monorepo_release import release
@@ -33,10 +34,12 @@ def test_release_component_released_publishes_and_commits_dependents(
         return_value={"released": "true", "version": "0.2.0"},
     )
     run = mocker.patch.object(release, "run")
+    wait = mocker.patch.object(release, "wait_until_listed")
 
     version = release.release_component(components_dir, "lib", dry_run=False)
 
     assert version == "0.2.0"
+    wait.assert_called_once_with(release.DEFAULT_CHECK_URL, "lib", "0.2.0")
     commands = [call.args[0][:2] for call in run.call_args_list]
     assert commands == [
         ["uv", "publish"],
@@ -92,11 +95,13 @@ def test_release_component_unpublished_tag_is_published_and_dependents_bumped(
     mocker.patch.object(release, "last_released", return_value=("0.2.0", "lib-v0.2.0"))
     mocker.patch.object(release, "published_versions", return_value={"0.1.0"})
     publish_missing = mocker.patch.object(release, "publish_missing_release")
+    wait = mocker.patch.object(release, "wait_until_listed")
     run = mocker.patch.object(release, "run")
 
     version = release.release_component(components_dir, "lib", dry_run=False)
 
     assert version is None
+    wait.assert_called_once_with(release.DEFAULT_CHECK_URL, "lib", "0.2.0")
     publish_missing.assert_called_once()
     assert publish_missing.call_args.args[:3] == (components_dir, "lib", "lib-v0.2.0")
     assert [call.args[0][:2] for call in run.call_args_list][:2] == [
@@ -125,3 +130,25 @@ def test_release_component_published_and_bumped_tag_changes_nothing(
 
     publish_missing.assert_not_called()
     run.assert_not_called()
+
+
+def test_wait_until_listed_polls_until_version_appears(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch.object(
+        release, "published_versions", side_effect=[set(), set(), {"0.2.0"}]
+    )
+    sleep = mocker.patch.object(release.time, "sleep")
+
+    release.wait_until_listed("https://index/simple/", "lib", "0.2.0")
+
+    assert sleep.call_count == 2
+
+
+def test_wait_until_listed_fails_after_timeout(mocker: MockerFixture) -> None:
+    mocker.patch.object(release, "published_versions", return_value=set())
+    mocker.patch.object(release.time, "sleep")
+    mocker.patch.object(release.time, "monotonic", side_effect=[0, 1, 1000])
+
+    with pytest.raises(SystemExit, match="not listed"):
+        release.wait_until_listed("https://index/simple/", "lib", "0.2.0")
