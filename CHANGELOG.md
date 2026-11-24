@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fix: wait for published versions to appear on the index
+
 ## 1.0.1 - 2026-11-19
 
 - fix: publish only wheels and source distributions

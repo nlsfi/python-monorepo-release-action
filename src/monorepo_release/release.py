@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -23,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CHECK_URL = "https://pypi.org/simple/"
 HTTP_NOT_FOUND = 404
+INDEX_WAIT_TIMEOUT_SECONDS = 300
+INDEX_WAIT_INTERVAL_SECONDS = 10
 
 
 def run(
@@ -75,6 +78,17 @@ def published_versions(check_url: str, package: str) -> set[str]:
         if error.code == HTTP_NOT_FOUND:
             return set()
         raise
+
+
+def wait_until_listed(check_url: str, package: str, version: str) -> None:
+    """Wait until the index lists a version, so dependents can install it."""
+    deadline = time.monotonic() + INDEX_WAIT_TIMEOUT_SECONDS
+    while version not in published_versions(check_url, package):
+        if time.monotonic() >= deadline:
+            msg = f"{package} {version} is not listed on {check_url} after publishing"
+            raise SystemExit(msg)
+        logger.info("Waiting for %s %s to appear on the index...", package, version)
+        time.sleep(INDEX_WAIT_INTERVAL_SECONDS)
 
 
 def publish(component_dir: Path, check_url: str, *, dry_run: bool) -> None:
@@ -175,21 +189,25 @@ def release_component(
     outputs = semantic_release(component_dir, dry_run=dry_run)
     released = outputs.get("released") == "true"
 
+    package = component_package_name(component_dir)
     if released:
         version = outputs["version"]
         publish(component_dir, check_url, dry_run=dry_run)
+        if not dry_run:
+            wait_until_listed(check_url, package, version)
     else:
         previous = last_released(component_dir)
         if previous is None:
             logger.info("No release for %s.", component)
             return None
         version, tag = previous
-        package = component_package_name(component_dir)
         if version not in published_versions(check_url, package):
             logger.info("Publishing unpublished release %s of %s.", tag, component)
             publish_missing_release(
                 components_dir, component, tag, check_url, dry_run=dry_run
             )
+            if not dry_run:
+                wait_until_listed(check_url, package, version)
 
     raise_dependent_requirements(
         components_dir, component, version, only_raise=not released, dry_run=dry_run
